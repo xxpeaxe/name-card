@@ -2,13 +2,13 @@ import { createServerClient } from '@supabase/ssr';
 import { createClient } from '@supabase/supabase-js';
 import { cookies } from 'next/headers';
 
+import {
+  SUPABASE_PUBLISHABLE_KEY,
+  SUPABASE_URL,
+} from '@/lib/supabase-config';
+
 function browserConfig() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
-  const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY?.trim();
-  if (!url || !key) {
-    throw new Error('Supabase public configuration is missing.');
-  }
-  return { url, key };
+  return { url: SUPABASE_URL, key: SUPABASE_PUBLISHABLE_KEY };
 }
 
 export async function createSupabaseServerClient() {

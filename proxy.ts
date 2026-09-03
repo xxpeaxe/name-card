@@ -1,13 +1,17 @@
 import { createServerClient } from '@supabase/ssr';
 import { type NextRequest, NextResponse } from 'next/server';
 
-export async function proxy(request: NextRequest) {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
-  const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY?.trim();
-  if (!url || !key) return NextResponse.next();
+import {
+  SUPABASE_PUBLISHABLE_KEY,
+  SUPABASE_URL,
+} from '@/lib/supabase-config';
 
+export async function proxy(request: NextRequest) {
   let response = NextResponse.next({ request });
-  const supabase = createServerClient(url, key, {
+  const supabase = createServerClient(
+    SUPABASE_URL,
+    SUPABASE_PUBLISHABLE_KEY,
+    {
     cookies: {
       getAll() {
         return request.cookies.getAll();
@@ -22,7 +26,8 @@ export async function proxy(request: NextRequest) {
         );
       },
     },
-  });
+    },
+  );
 
   await supabase.auth.getUser();
   return response;

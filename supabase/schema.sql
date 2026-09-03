@@ -10,7 +10,7 @@ create table if not exists public.application_batches (
 );
 
 create table if not exists public.business_cards (
-  id uuid primary key,
+  id uuid primary key default gen_random_uuid(),
   batch_id uuid not null references public.application_batches(id) on delete cascade,
   name_ko text not null,
   name_en text not null,
@@ -48,3 +48,74 @@ create policy "Admin can view business cards"
   for select
   to authenticated
   using (lower(auth.jwt() ->> 'email') = 'kenneth.shin@mistobrand.com');
+
+create or replace function public.submit_business_card_application(
+  p_batch_id uuid,
+  p_receipt_number text,
+  p_created_at timestamptz,
+  p_applicants jsonb
+)
+returns table (receipt_number text, email_status text)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  applicant_total integer := jsonb_array_length(p_applicants);
+begin
+  if applicant_total < 1 or applicant_total > 20 then
+    raise exception 'Applicant count must be between 1 and 20';
+  end if;
+
+  insert into public.application_batches (
+    id,
+    receipt_number,
+    applicant_count,
+    created_at
+  )
+  values (
+    p_batch_id,
+    p_receipt_number,
+    applicant_total,
+    p_created_at
+  )
+  on conflict (id) do nothing;
+
+  if not exists (
+    select 1 from public.business_cards where batch_id = p_batch_id
+  ) then
+    insert into public.business_cards (
+      batch_id,
+      name_ko,
+      name_en,
+      position,
+      division,
+      team,
+      extension,
+      mobile,
+      email
+    )
+    select
+      p_batch_id,
+      trim(applicant ->> 'nameKo'),
+      trim(applicant ->> 'nameEn'),
+      trim(applicant ->> 'position'),
+      trim(applicant ->> 'division'),
+      trim(applicant ->> 'team'),
+      coalesce(trim(applicant ->> 'extension'), ''),
+      trim(applicant ->> 'mobile'),
+      trim(applicant ->> 'email')
+    from jsonb_array_elements(p_applicants) as applicant;
+  end if;
+
+  return query
+  select batch.receipt_number, batch.email_status
+  from public.application_batches as batch
+  where batch.id = p_batch_id;
+end;
+$$;
+
+revoke all on function public.submit_business_card_application(uuid, text, timestamptz, jsonb)
+  from public, anon, authenticated;
+grant execute on function public.submit_business_card_application(uuid, text, timestamptz, jsonb)
+  to service_role;

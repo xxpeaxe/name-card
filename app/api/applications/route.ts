@@ -70,48 +70,25 @@ export async function POST(request: Request) {
 
     const supabase = createSupabaseAdminClient();
     const batchId = body.submissionKey;
-    const { data: existing, error: lookupError } = await supabase
-      .from('application_batches')
-      .select('receipt_number,email_status')
-      .eq('id', batchId)
-      .maybeSingle();
-    if (lookupError) throw lookupError;
-
     const now = new Date();
-    const receiptNumber =
-      existing?.receipt_number ??
-      `BC-${now.toISOString().slice(0, 10).replaceAll('-', '')}-${batchId.slice(0, 6).toUpperCase()}`;
+    const proposedReceiptNumber = `BC-${now.toISOString().slice(0, 10).replaceAll('-', '')}-${batchId.slice(0, 6).toUpperCase()}`;
+    const { data: batch, error: submissionError } = await supabase
+      .rpc('submit_business_card_application', {
+        p_batch_id: batchId,
+        p_receipt_number: proposedReceiptNumber,
+        p_created_at: now.toISOString(),
+        p_applicants: applicants,
+      })
+      .single();
+    if (submissionError || !batch) throw submissionError;
 
-    if (existing?.email_status === 'sent') {
+    const batchRow = batch as {
+      receipt_number: string;
+      email_status: string;
+    };
+    const receiptNumber = batchRow.receipt_number;
+    if (batchRow.email_status === 'sent') {
       return Response.json({ receiptNumber, applicantCount: applicants.length });
-    }
-
-    if (!existing) {
-      const { error: batchError } = await supabase
-        .from('application_batches')
-        .insert({
-          id: batchId,
-          receipt_number: receiptNumber,
-          applicant_count: applicants.length,
-          created_at: now.toISOString(),
-        });
-      if (batchError) throw batchError;
-
-      const { error: cardsError } = await supabase.from('business_cards').insert(
-        applicants.map((applicant) => ({
-          id: crypto.randomUUID(),
-          batch_id: batchId,
-          name_ko: applicant.nameKo,
-          name_en: applicant.nameEn,
-          position: applicant.position,
-          division: applicant.division,
-          team: applicant.team,
-          extension: applicant.extension,
-          mobile: applicant.mobile,
-          email: applicant.email,
-        })),
-      );
-      if (cardsError) throw cardsError;
     }
 
     const emailResult = await sendApplicationEmail(receiptNumber, applicants);
